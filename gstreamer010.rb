@@ -14,6 +14,12 @@ class Gstreamer010 < Formula
   # https://bugzilla.gnome.org/show_bug.cgi?id=680428
   patch :DATA
 
+  # Patch to be compatible with bison 3
+  patch do
+    url "https://bug706462.bugzilla-attachments.gnome.org/attachment.cgi?id=252504"
+    sha1 "a022825016b098469c36804773f3406494fc6e4e"
+  end
+
   def install
     # Look for plugins in HOMEBREW_PREFIX/lib/gstreamer-0.10 instead of
     # HOMEBREW_PREFIX/Cellar/gstreamer/0.10/lib/gstreamer-0.10, so we'll find
