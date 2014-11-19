@@ -10,9 +10,9 @@ class Gcc49 < Formula
       end
     elsif Hardware::CPU.type == :ppc
       if MacOS.prefer_64_bit?
-        'ppc64'
+        'powerpc64'
       else
-        'ppc'
+        'powerpc'
       end
     end
   end
@@ -22,9 +22,9 @@ class Gcc49 < Formula
   end
 
   homepage 'http://gcc.gnu.org'
-  url 'http://ftpmirror.gnu.org/gcc/gcc-4.9.0/gcc-4.9.0.tar.bz2'
-  mirror 'ftp://gcc.gnu.org/pub/gcc/releases/gcc-4.9.0/gcc-4.9.0.tar.bz2'
-  sha1 'fbde8eb49f2b9e6961a870887cf7337d31cd4917'
+  url "http://ftpmirror.gnu.org/gcc/gcc-4.9.2/gcc-4.9.2.tar.bz2"
+  mirror "ftp://gcc.gnu.org/pub/gcc/releases/gcc-4.9.2/gcc-4.9.2.tar.bz2"
+  sha1 "79dbcb09f44232822460d80b033c962c0237c6d8"
 
   head 'svn://gcc.gnu.org/svn/gcc/branches/gcc-4_9-branch'
 
@@ -42,6 +42,8 @@ class Gcc49 < Formula
   depends_on 'cloog018'
   depends_on 'isl011'
   depends_on 'ecj' if build.include? 'enable-java' or build.include? 'enable-all-languages'
+
+  fails_with :llvm
 
   # GCC bootstraps itself, so it is OK to have an incompatible C++ stdlib
   cxxstdlib_check :skip
@@ -139,9 +141,6 @@ class Gcc49 < Formula
     # Handle conflicts between GCC formulae.
 
     # Since GCC 4.8 libffi stuff are no longer shipped.
-
-    # Rename libiberty.a.
-    Dir.glob(prefix/"**/libiberty.*") { |file| add_suffix file, version_suffix }
 
     # Rename man7.
     Dir.glob(man7/"*.7") { |file| add_suffix file, version_suffix }
