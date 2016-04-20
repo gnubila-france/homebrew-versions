@@ -1,47 +1,108 @@
-require 'formula'
-
 class Ruby193 < Formula
-  homepage 'http://www.ruby-lang.org/en/'
-  url 'http://cache.ruby-lang.org/pub/ruby/1.9/ruby-1.9.3-p551.tar.bz2'
-  sha256 'b0c5e37e3431d58613a160504b39542ec687d473de1d4da983dabcf3c5de771e'
+  desc "Powerful, clean, object-oriented scripting language"
+  homepage "https://www.ruby-lang.org/"
+  url "https://cache.ruby-lang.org/pub/ruby/1.9/ruby-1.9.3-p551.tar.bz2"
+  sha256 "b0c5e37e3431d58613a160504b39542ec687d473de1d4da983dabcf3c5de771e"
+  revision 2
+
+  bottle do
+    sha256 "37b47d24dadddcd0f8571e108753d3e3f0131642629331eaf1c2d13fcef1faa6" => :el_capitan
+    sha256 "b6c25ce86bd6bdc9f09b0a876b20eb13f35734d706d0fa44434a4a88dbf90055" => :yosemite
+    sha256 "52121560dc4b87e95b9aa1fca79322a2bb0efb453eddd517bd543b1cd5f82730" => :mavericks
+  end
+
+  keg_only :provided_by_osx
 
   option :universal
-  option 'with-suffix', 'Suffix commands with "193"'
-  option 'with-doc', 'Install documentation'
-  option 'with-tcltk', 'Install with Tcl/Tk support'
+  option "with-suffix", "Suffix commands with '193'"
+  option "with-doc", "Install documentation"
+  option "with-tcltk", "Install with Tcl/Tk support"
 
-  depends_on 'pkg-config' => :build
-  depends_on 'readline'
-  depends_on 'gdbm'
-  depends_on 'libyaml'
-  depends_on :x11 if build.with? 'tcltk'
+  depends_on "pkg-config" => :build
+  depends_on "readline" => :recommended
+  depends_on "gdbm" => :optional
+  depends_on "libyaml"
+  depends_on "openssl"
+  depends_on :x11 if build.with? "tcltk"
 
   fails_with :llvm do
     build 2326
   end
 
   def install
-    args = ["--prefix=#{prefix}", "--enable-shared"]
+    args = %W[
+      --prefix=#{prefix}
+      --enable-shared
+      --with-sitedir=#{HOMEBREW_PREFIX}/lib/ruby/site_ruby
+      --with-vendordir=#{HOMEBREW_PREFIX}/lib/ruby/vendor_ruby
+    ]
 
     if build.universal?
       ENV.universal_binary
       args << "--with-arch=#{Hardware::CPU.universal_archs.join(",")}"
     end
 
-    args << "--program-suffix=193" if build.with? "suffix"
-    args << "--disable-tcltk-framework" <<  "--with-out-ext=tcl" <<  "--with-out-ext=tk" if build.without? "tcltk"
+    args << "--program-suffix=#{program_suffix}" if build.with? "suffix"
+    args << "--with-out-ext=tk" if build.without? "tcltk"
     args << "--disable-install-doc" if build.without? "doc"
 
-    system "./configure", *args
-    system "make"
-    system "make install"
-    system "make install-doc" if build.with? "doc"
+    paths = [
+      Formula["libyaml"].opt_prefix,
+      Formula["openssl"].opt_prefix,
+    ]
 
-    (lib/"ruby/#{abi_version}/rubygems/defaults/operating_system.rb").write rubygems_config
+    %w[readline gdbm].each do |dep|
+      paths << Formula[dep].opt_prefix if build.with? dep
+    end
+
+    args << "--with-opt-dir=#{paths.join(":")}"
+
+    system "./configure", *args
+
+    # Ruby has been configured to look in the HOMEBREW_PREFIX for the
+    # sitedir and vendordir directories; however we don't actually want to create
+    # them during the install.
+    #
+    # These directories are empty on install; sitedir is used for non-rubygems
+    # third party libraries, and vendordir is used for packager-provided libraries.
+    inreplace "tool/rbinstall.rb" do |s|
+      s.gsub! 'prepare "extension scripts", sitelibdir', ""
+      s.gsub! 'prepare "extension scripts", vendorlibdir', ""
+      s.gsub! 'prepare "extension objects", sitearchlibdir', ""
+      s.gsub! 'prepare "extension objects", vendorarchlibdir', ""
+    end
+
+    system "make"
+    system "make", "install"
+  end
+
+  def post_install
+    # Customize rubygems to look/install in the global gem directory
+    # instead of in the Cellar, making gems last across reinstalls
+    config_file = lib/"ruby/#{abi_version}/rubygems/defaults/operating_system.rb"
+    config_file.unlink if config_file.exist?
+    config_file.write rubygems_config
+
+    # Create the sitedir and vendordir that were skipped during install
+    ruby="#{bin}/ruby#{program_suffix}"
+    %w[sitearchdir vendorarchdir].each do |dir|
+      mkdir_p `#{ruby} -rrbconfig -e 'print RbConfig::CONFIG["#{dir}"]'`
+    end
+
+    # Create the version-specific bindir used by rubygems
+    mkdir_p "#{rubygems_bindir}"
   end
 
   def abi_version
     "1.9.1"
+  end
+
+  def program_suffix
+    build.with?("suffix") ? "193" : ""
+  end
+
+  def rubygems_bindir
+    "#{HOMEBREW_PREFIX}/lib/ruby/gems/#{abi_version}/bin"
   end
 
   def rubygems_config; <<-EOS.undent
@@ -50,6 +111,7 @@ class Ruby193 < Formula
         alias :old_default_dir :default_dir
         alias :old_default_path :default_path
         alias :old_default_bindir :default_bindir
+        alias :old_ruby :ruby
       end
 
       def self.default_dir
@@ -98,9 +160,27 @@ class Ruby193 < Formula
       end
 
       def self.default_bindir
-        "#{HOMEBREW_PREFIX}/bin"
+        "#{rubygems_bindir}"
+      end
+
+      def self.ruby
+        "#{opt_bin}/ruby#{program_suffix}"
       end
     end
     EOS
+  end
+
+  def caveats; <<-EOS.undent
+    By default, binaries installed by gem will be placed into:
+      #{rubygems_bindir}
+
+    You may want to add this to your PATH.
+    EOS
+  end
+
+  test do
+    hello_text = shell_output("#{bin}/ruby#{program_suffix} -e 'puts :hello'")
+    assert_equal "hello\n", hello_text
+    system "#{bin}/gem#{program_suffix}", "list", "--local"
   end
 end

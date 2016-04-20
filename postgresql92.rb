@@ -1,32 +1,38 @@
-# -*- coding: utf-8 -*-
-require 'formula'
-
 class Postgresql92 < Formula
-  homepage 'http://www.postgresql.org/'
-  url 'http://ftp.postgresql.org/pub/source/v9.2.8/postgresql-9.2.8.tar.bz2'
-  sha256 '568ba482340219097475cce9ab744766889692ee7c9df886563e8292d66ed87c'
-  revision 1
+  desc "Object-relational database system"
+  homepage "http://www.postgresql.org/"
+  url "http://ftp.postgresql.org/pub/source/v9.2.13/postgresql-9.2.13.tar.bz2"
+  sha256 "5dcbd6209a8c0f508504fa433486583a42caaa240c823e1b3576db8a72db6a44"
 
-  option '32-bit'
-  option 'no-perl', 'Build without Perl support'
-  option 'no-tcl', 'Build without Tcl support'
-  option 'enable-dtrace', 'Build with DTrace support'
+  bottle do
+    sha256 "40eafbdf891fd0fc0b78e9eab9eaa9cf9468a88a9c491aa81ea0dd557f509623" => :yosemite
+    sha256 "27bbf8b2264982a0a1456129e66b58d5ecfb3bb25d3290f13e1295a39c6d42e4" => :mavericks
+    sha256 "2af24cc10f8a6bffdf3f53b7bd9d46bed173b922846d887d840c434e1efba95b" => :mountain_lion
+  end
 
-  depends_on 'openssl'
-  depends_on 'readline'
-  depends_on 'libxml2' if MacOS.version <= :leopard # Leopard libxml is too old
-  depends_on 'ossp-uuid' => :recommended
+  option "32-bit"
+  option "without-perl", "Build without Perl support"
+  option "without-tcl", "Build without Tcl support"
+  option "with-dtrace", "Build with DTrace support"
+
+  deprecated_option "no-perl" => "without-perl"
+  deprecated_option "no-tcl" => "without-tcl"
+  deprecated_option "enable-dtrace" => "with-dtrace"
+
+  depends_on "openssl"
+  depends_on "readline"
+  depends_on "libxml2" if MacOS.version <= :leopard # Leopard libxml is too old
+  depends_on "ossp-uuid" => :recommended
   depends_on :python => :recommended
 
-  conflicts_with 'postgres-xc',
-    :because => 'postgresql and postgres-xc install the same binaries.'
+  conflicts_with "postgres-xc",
+    :because => "postgresql and postgres-xc install the same binaries."
 
   fails_with :clang do
     build 211
-    cause 'Miscompilation resulting in segfault on queries'
+    cause "Miscompilation resulting in segfault on queries"
   end
 
-  # Fix PL/Python build: https://github.com/mxcl/homebrew/issues/11162
   # Fix uuid-ossp build issues: http://archives.postgresql.org/pgsql-general/2012-07/msg00654.php
   patch :DATA
 
@@ -49,33 +55,39 @@ class Postgresql92 < Formula
       --with-libxslt
     ]
 
-    args << "--with-ossp-uuid" if build.with? 'ossp-uuid'
-    args << "--with-python" if build.with? 'python'
-    args << "--with-perl" unless build.include? 'no-perl'
-    if !build.include? "no-tcl"
+    args << "--with-ossp-uuid" if build.with? "ossp-uuid"
+    args << "--with-python" if build.with? "python"
+    args << "--with-perl" if build.with? "perl"
+
+    # The CLT is required to build tcl support on 10.7 and 10.8 because tclConfig.sh is not part of the SDK
+    if build.with?("tcl") && (MacOS.version >= :mavericks || MacOS::CLT.installed?)
       args << "--with-tcl"
-      args << "--with-tclconfig=#{MacOS.sdk_path}/usr/lib"
-    end
-    args << "--enable-dtrace" if build.include? 'enable-dtrace'
 
-    if build.with? 'ossp-uuid'
-      ENV.append 'CFLAGS', `uuid-config --cflags`.strip
-      ENV.append 'LDFLAGS', `uuid-config --ldflags`.strip
-      ENV.append 'LIBS', `uuid-config --libs`.strip
+      if File.exist?("#{MacOS.sdk_path}/usr/lib/tclConfig.sh")
+        args << "--with-tclconfig=#{MacOS.sdk_path}/usr/lib"
+      end
     end
 
-    if build.with? 'python'
+    args << "--enable-dtrace" if build.with? "dtrace"
+
+    if build.with? "ossp-uuid"
+      ENV.append "CFLAGS", `uuid-config --cflags`.strip
+      ENV.append "LDFLAGS", `uuid-config --ldflags`.strip
+      ENV.append "LIBS", `uuid-config --libs`.strip
+    end
+
+    if build.with? "python"
       args << "ARCHFLAGS='-arch #{MacOS.preferred_arch}'"
       check_python_arch
     end
 
     if build.build_32_bit?
-      ENV.append 'CFLAGS', "-arch #{MacOS.preferred_arch}"
-      ENV.append 'LDFLAGS', "-arch #{MacOS.preferred_arch}"
+      ENV.append "CFLAGS", "-arch #{MacOS.preferred_arch}"
+      ENV.append "LDFLAGS", "-arch #{MacOS.preferred_arch}"
     end
 
     system "./configure", *args
-    system "make install-world"
+    system "make", "install-world"
   end
 
   def check_python_arch
@@ -116,16 +128,15 @@ class Postgresql92 < Formula
         http://www.postgresql.org/docs/9.2/static/kernel-resources.html#SYSVIPC
     EOS
 
-    s << "\n" << gem_caveats if MacOS.prefer_64_bit?
-    return s
-  end
+    if MacOS.prefer_64_bit?
+      s << "\n" << <<-EOS.undent
+        When installing the postgres gem, including ARCHFLAGS is recommended:
+          ARCHFLAGS="-arch x86_64" gem install pg
 
-  def gem_caveats; <<-EOS.undent
-    When installing the postgres gem, including ARCHFLAGS is recommended:
-      ARCHFLAGS="-arch x86_64" gem install pg
-
-    To install gems without sudo, see the Homebrew wiki.
-    EOS
+        To install gems without sudo, see the Homebrew wiki.
+      EOS
+    end
+    s
   end
 
   plist_options :manual => "pg_ctl -D #{HOMEBREW_PREFIX}/var/postgres -l #{HOMEBREW_PREFIX}/var/postgres/server.log start"
@@ -157,21 +168,14 @@ class Postgresql92 < Formula
     </plist>
     EOS
   end
+
+  test do
+    system "#{bin}/initdb", testpath/"test"
+  end
 end
 
 
 __END__
---- a/src/pl/plpython/Makefile	2011-09-23 08:03:52.000000000 +1000
-+++ b/src/pl/plpython/Makefile	2011-10-26 21:43:40.000000000 +1100
-@@ -24,8 +24,6 @@
- # Darwin (OS X) has its own ideas about how to do this.
- ifeq ($(PORTNAME), darwin)
- shared_libpython = yes
--override python_libspec = -framework Python
--override python_additional_libs =
- endif
- 
- # If we don't have a shared library and the platform doesn't allow it
 --- a/contrib/uuid-ossp/uuid-ossp.c	2012-07-30 18:34:53.000000000 -0700
 +++ b/contrib/uuid-ossp/uuid-ossp.c	2012-07-30 18:35:03.000000000 -0700
 @@ -9,6 +9,8 @@

@@ -1,18 +1,27 @@
-require 'formula'
-
 class Postgresql8 < Formula
-  homepage 'http://www.postgresql.org/'
-  url 'http://ftp.postgresql.org/pub/source/v8.4.21/postgresql-8.4.21.tar.bz2'
-  sha256 '388f67e59f2a16c27e84f50656f5d755adf3d0a883138366d091aa0c727c1e2c'
-  revision 1
+  desc "Object-relational database system"
+  homepage "http://www.postgresql.org/"
+  url "http://ftp.postgresql.org/pub/source/v8.4.22/postgresql-8.4.22.tar.bz2"
+  sha256 "5c1d56ce77448706d9dd03b2896af19d9ab1b9b8dcdb96c39707c74675ca3826"
 
-  depends_on 'openssl'
-  depends_on 'readline'
-  depends_on 'libxml2' if MacOS.version == :leopard
-  depends_on 'ossp-uuid' => :recommended
+  bottle do
+    sha256 "3112ea7b41cf54ef5afb870a48cadd281ad0683903f9d5a075622f471e1078c7" => :yosemite
+    sha256 "5a99e0e124cc349fbf9244d470e66dae026e9b3f14c1d69bb8812eddf23dffdb" => :mavericks
+    sha256 "4ac58e1036d1a0848b1642542b293c4299c44bd34b9c1aeb931a7404556b1798" => :mountain_lion
+  end
 
-  option 'no-python', 'Build without Python support'
-  option 'no-perl', 'Build without Perl support'
+  depends_on "openssl"
+  depends_on "readline"
+  depends_on "libxml2" if MacOS.version == :leopard
+  depends_on "ossp-uuid" => :recommended
+
+  option "without-python", "Build without Python support"
+  option "without-perl", "Build without Perl support"
+  option "without-tcl", "Build without Tcl support"
+
+  deprecated_option "no-python" => "without-python"
+  deprecated_option "no-perl" => "without-perl"
+  deprecated_option "no-tcl" => "without-tcl"
 
   # Fix build on 10.8 Mountain Lion
   # https://github.com/mxcl/homebrew/commit/cd77baf2e2f75b4ae141414bf8ff6d5c732e2b9a
@@ -35,27 +44,38 @@ class Postgresql8 < Formula
     ]
 
     args << "--with-bonjour" unless MacOS.version >= :mavericks
-    args << "--with-ossp-uuid" if build.with? 'ossp-uuid'
-    args << "--with-python" unless build.include? 'no-python'
-    args << "--with-perl" unless build.include? 'no-perl'
+    args << "--with-ossp-uuid" if build.with? "ossp-uuid"
+    args << "--with-python" if build.with? "python"
+    args << "--with-perl" if build.with? "perl"
 
-    if build.with? 'ossp-uuid'
-      ENV.append 'CFLAGS', `uuid-config --cflags`.strip
-      ENV.append 'LDFLAGS', `uuid-config --ldflags`.strip
-      ENV.append 'LIBS', `uuid-config --libs`.strip
+    # The CLT is required to build tcl support on 10.7 and 10.8 because tclConfig.sh is not part of the SDK
+    if build.with?("tcl") && (MacOS.version >= :mavericks || MacOS::CLT.installed?)
+      args << "--with-tcl"
+
+      if File.exist?("#{MacOS.sdk_path}/usr/lib/tclConfig.sh")
+        args << "--with-tclconfig=#{MacOS.sdk_path}/usr/lib"
+      end
     end
 
-    if MacOS.prefer_64_bit? and not build.include? 'no-python'
+    if build.with? "ossp-uuid"
+      ENV.append "CFLAGS", `uuid-config --cflags`.strip
+      ENV.append "LDFLAGS", `uuid-config --ldflags`.strip
+      ENV.append "LIBS", `uuid-config --libs`.strip
+    end
+
+    if MacOS.prefer_64_bit? and build.with? "python"
       args << "ARCHFLAGS='-arch x86_64'"
       check_python_arch
     end
 
     system "./configure", *args
-    system "make install"
+    system "make", "install"
 
     %w[ adminpack dblink fuzzystrmatch lo uuid-ossp pg_buffercache pg_trgm
         pgcrypto tsearch2 vacuumlo xml2 intarray ].each do |a|
-      system "cd contrib/#{a}; make install"
+      cd "contrib/#{a}" do
+        system "make", "install"
+      end
     end
   end
 
@@ -96,16 +116,15 @@ class Postgresql8 < Formula
           initdb #{var}/postgres
     EOS
 
-    s << gem_caveats if MacOS.prefer_64_bit?
-    return s
-  end
+    if MacOS.prefer_64_bit?
+      s << "\n" << <<-EOS.undent
+        When installing the postgres gem, including ARCHFLAGS is recommended:
+          ARCHFLAGS="-arch x86_64" gem install pg
 
-  def gem_caveats; <<-EOS.undent
-    When installing the postgres gem, including ARCHFLAGS is recommended:
-      ARCHFLAGS="-arch x86_64" gem install pg
-
-    To install gems without sudo, see the Homebrew wiki.
-    EOS
+        To install gems without sudo, see the Homebrew wiki.
+      EOS
+    end
+    s
   end
 
   plist_options :manual => "pg_ctl -D #{HOMEBREW_PREFIX}/var/postgres -l #{HOMEBREW_PREFIX}/var/postgres/server.log start"
@@ -134,6 +153,10 @@ class Postgresql8 < Formula
     </dict>
     </plist>
     EOS
+  end
+
+  test do
+    system "#{bin}/initdb", testpath/"test"
   end
 end
 
